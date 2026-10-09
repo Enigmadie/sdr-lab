@@ -1,0 +1,14 @@
+AGENTS.md
+TODO.md
+node_modules/
+dist/
+target/
+crates/dsp-wasm/pkg/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.iq
+*.cs8
+*.cs16
+*.cf32

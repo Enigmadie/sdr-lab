@@ -1,0 +1,37 @@
+{
+  "name": "sdr-lab",
+  "private": true,
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm wasm:build && concurrently --kill-others --names server,web \"cargo run -p sdr-server\" \"pnpm --filter @sdr-lab/web dev\"",
+    "start": "pnpm dev",
+    "dev:web": "pnpm --filter @sdr-lab/web dev",
+    "dev:server": "cargo run -p sdr-server",
+    "wasm:setup": "rustup target add wasm32-unknown-unknown && cargo install wasm-bindgen-cli --version 0.2.100 --locked",
+    "wasm:build": "wasm-pack build crates/dsp-wasm --target web --out-dir pkg",
+    "check": "pnpm check-types",
+    "check-types": "pnpm wasm:build && pnpm --filter @sdr-lab/web check-types",
+    "lint": "prettier --write . && eslint . --fix && cargo fmt --all",
+    "lint:check": "prettier --check . && eslint . --max-warnings=0 && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
+    "test": "cargo test --workspace",
+    "quality:check": "pnpm check-types && pnpm lint:check && pnpm test",
+    "build": "pnpm wasm:build && pnpm --filter @sdr-lab/web build && cargo build -p sdr-server --release"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "@typescript-eslint/eslint-plugin": "8.68.0",
+    "@typescript-eslint/parser": "8.68.0",
+    "concurrently": "^9.2.1",
+    "eslint": "9.39.4",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-prettier": "5.5.6",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "16.5.0",
+    "prettier": "3.9.6",
+    "wasm-pack": "0.15.0"
+  }
+}
