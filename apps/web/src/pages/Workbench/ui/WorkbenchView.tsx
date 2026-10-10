@@ -3,18 +3,20 @@ import type { WorkbenchViewProps } from '../types';
 import Diagnostics from './Diagnostics';
 import SpectrumPanel from './SpectrumPanel';
 import StreamStatusBadge from './StreamStatusBadge';
+import WaterfallPanel from './WaterfallPanel';
 
 export default function WorkbenchView({
   status,
   metrics,
   latestFrame,
+  streamSession,
   onReconnect,
 }: WorkbenchViewProps): ReactElement {
   return (
     <main>
       <header>
         <div>
-          <p className="eyebrow">RADIO WORKBENCH / BOOTSTRAP</p>
+          <p className="eyebrow">RADIO WORKBENCH / WASM + WEBGPU</p>
           <h1>SDR Lab</h1>
         </div>
         <StreamStatusBadge status={status} />
@@ -35,9 +37,11 @@ export default function WorkbenchView({
 
       <Diagnostics metrics={metrics} />
 
+      <WaterfallPanel latestFrame={latestFrame} streamSession={streamSession} />
+
       <footer>
-        Next: WebGPU waterfall → RTL-SDR capture → recording and replay → FM
-        audio. GPU processing is not enabled yet.
+        FFT runs in Rust/WASM; waterfall rendering runs on WebGPU when
+        available. Next: RTL-SDR capture → recording and replay → FM audio.
       </footer>
     </main>
   );

@@ -1,17 +1,21 @@
 # SDR Lab
 
 Browser SDR workbench built with **Vite + React + TypeScript**, **Rust/WASM**
-and, in the next milestone, **WebGPU**. Designed for RTL-SDR Blog V4 on a
+and **WebGPU**. Designed for RTL-SDR Blog V4 on a
 homelab machine, with an offline-friendly synthetic source.
 
-## Current bootstrap
+## Current features
 
 - Axum server generates complex I/Q and streams binary WebSocket blocks.
 - A browser Worker runs Rust/WASM FFT and transfers spectra to the UI.
 - Canvas 2D displays the spectrum; diagnostics show block processing time and gaps.
+- WebGPU renders a 512-row waterfall using an `r32float` ring texture and WGSL.
+- Pause/resume and color-range controls change the waterfall independently of FFT.
+- GPU unavailability and device loss are reported with a retry action; the CPU
+  spectrum continues to work without WebGPU.
 - The Rust server can serve the production frontend from the same origin.
 
-**No RTL-SDR access, FM audio, recording or WebGPU implementation yet.**
+**No RTL-SDR access, FM audio or recording yet. FFT still runs in WASM, not on GPU.**
 The synthetic source does not touch existing radio services or hardware.
 
 ## Requirements
@@ -30,7 +34,9 @@ make start
 
 Open the Vite URL (normally http://127.0.0.1:5173). API and WebSocket are
 proxied to the Rust server at 127.0.0.1:3000. First startup compiles Rust.
-Two peaks should appear at −10.5 and +6 kHz relative to the center.
+Two fixed peaks appear at −10.5 and +6 kHz relative to the center, alongside a
+sweeping tone and periodic bursts. The waterfall shows their history; newest
+spectra appear at the top. See [Waterfall architecture](docs/waterfall.md).
 
 `pnpm dev` builds WASM once before starting both processes. After editing
 DSP Rust code, run `pnpm wasm:build` again and reload the page.
@@ -62,6 +68,7 @@ apps/web/src/app     Application shell
 apps/web/src/pages   Pages with model, UI and rendering helpers
 apps/web/src/shared  Shared I/Q decoding helpers
 apps/web/src/workers DSP Worker and message contracts
+apps/web/src/gpu     WebGPU renderer and WGSL shader
 crates/server        Axum API, WebSocket, synthetic source, static files
 crates/dsp           Reusable Rust FFT and future DSP algorithms
 crates/dsp-wasm      Browser-facing wasm-bindgen wrapper
@@ -71,7 +78,7 @@ docs/protocol.md     Wire format and current limitations
 
 ## Roadmap
 
-WebGPU waterfall → real RTL-SDR capture → recording/replay → mono FM audio
+Real RTL-SDR capture → recording/replay → mono FM audio
 → GPU FFT comparison. Heavy sample buffers stay outside React state.
 Large I/Q recordings are not tracked in Git.
 

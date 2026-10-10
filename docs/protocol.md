@@ -11,8 +11,10 @@ All numeric fields are little-endian; magic is literal ASCII.
 | 12     | 4         | Number of complex samples, unsigned 32-bit           |
 | 16     | count × 8 | Interleaved float32: I₀, Q₀, I₁, Q₁, …               |
 
-Current source: two complex tones at +6 kHz and −10.5 kHz with deterministic
-noise; 48 kS/s, 2048 samples/block. Samples are normalized full-scale values,
+Current source: two fixed complex tones at +6 kHz and −10.5 kHz, a continuous-phase
+tone sweeping sinusoidally between ±14 kHz over eight seconds, a +18 kHz burst
+lasting 150 ms every two seconds, and deterministic noise. The stream runs at
+48 kS/s with 2048 samples/block. Samples are normalized full-scale values,
 not volts. Spectrum uses a periodic Hann window, window-gain normalization,
 and fftshift. Values are dBFS per bin, not dBm or calibrated PSD.
 

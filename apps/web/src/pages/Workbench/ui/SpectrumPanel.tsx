@@ -39,8 +39,8 @@ export default function SpectrumPanel({
         <span>+24 kHz</span>
       </div>
       <p className="hint">
-        The peaks at −10.5 and +6 kHz are two test signals. Frequencies are
-        relative to the center of the captured band.
+        Fixed tones at −10.5 and +6 kHz, a sweeping tone and periodic bursts.
+        Frequencies are relative to the center of the captured band.
       </p>
     </section>
   );

@@ -12,5 +12,6 @@ export interface WorkbenchViewProps {
   status: StreamStatus;
   metrics: StreamMetrics;
   latestFrame: RefObject<SpectrumFrame | null>;
+  streamSession: number;
   onReconnect: () => void;
 }

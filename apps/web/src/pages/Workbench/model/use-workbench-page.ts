@@ -87,5 +87,11 @@ export function useWorkbenchPage(): WorkbenchViewProps {
     setSession((currentSession) => currentSession + 1);
   }
 
-  return { status, metrics, latestFrame, onReconnect: handleReconnect };
+  return {
+    status,
+    metrics,
+    latestFrame,
+    streamSession: session,
+    onReconnect: handleReconnect,
+  };
 }

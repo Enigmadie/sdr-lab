@@ -11,7 +11,7 @@
     "allowImportingTsExtensions": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["vite/client"]
+    "types": ["vite/client", "@webgpu/types"]
   },
   "include": ["src", "vite.config.ts"]
 }

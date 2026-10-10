@@ -13,6 +13,8 @@ use tower_http::services::{ServeDir, ServeFile};
 const SAMPLE_RATE: u32 = 48_000;
 const BLOCK_SIZE: usize = 2048;
 
+mod synthetic;
+
 #[derive(Serialize)]
 struct Status {
     source: &'static str,
@@ -40,9 +42,7 @@ async fn stream_synthetic(mut socket: WebSocket) {
     ));
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut sequence = 0u32;
-    let mut sample_index = 0u64;
-    // Deterministic noise makes repeated sessions reproducible.
-    let mut noise_state = 0x1234_5678u32;
+    let mut source = synthetic::SyntheticSource::new(SAMPLE_RATE);
     loop {
         tokio::select! {
             message = socket.recv() => {
@@ -52,20 +52,7 @@ async fn stream_synthetic(mut socket: WebSocket) {
                 }
             }
             _ = tick.tick() => {
-                let samples: Vec<_> = (0..BLOCK_SIZE).map(|_| {
-                    let t = sample_index as f64 / SAMPLE_RATE as f64;
-                    sample_index += 1;
-                    let a = std::f64::consts::TAU * 6_000.0 * t;
-                    let b = std::f64::consts::TAU * -10_500.0 * t;
-                    let mut noise = || {
-                        noise_state = noise_state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                        (noise_state as f64 / u32::MAX as f64 - 0.5) * 0.04
-                    };
-                    [
-                        (0.55 * a.cos() + 0.2 * b.cos() + noise()) as f32,
-                        (0.55 * a.sin() + 0.2 * b.sin() + noise()) as f32,
-                    ]
-                }).collect();
+                let samples = source.next_block(BLOCK_SIZE);
                 let bytes = sdr_protocol::encode_iq(sequence, SAMPLE_RATE, &samples);
                 sequence = sequence.wrapping_add(1);
                 // A stalled client is disconnected instead of accumulating a backlog.
