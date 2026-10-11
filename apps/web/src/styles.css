@@ -120,6 +120,29 @@ canvas {
   gap: 16px;
   margin-top: 24px;
 }
+.receiver-panel {
+  margin-bottom: 24px;
+}
+.receiver-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.receiver-controls label {
+  color: #a9bacb;
+  font-size: 13px;
+}
+.receiver-controls input,
+.receiver-controls select {
+  width: 100%;
+  display: block;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #3c566e;
+  border-radius: 8px;
+  color: #e4edf5;
+  background: #101720;
+}
 .metrics article {
   background: #151f2b;
   border: 1px solid #293949;
@@ -201,6 +224,9 @@ footer {
     grid-template-columns: repeat(2, 1fr);
   }
   .waterfall-controls {
+    grid-template-columns: 1fr;
+  }
+  .receiver-controls {
     grid-template-columns: 1fr;
   }
   .panel {

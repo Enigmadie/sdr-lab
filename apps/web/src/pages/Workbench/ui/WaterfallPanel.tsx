@@ -1,12 +1,14 @@
 import type { ReactElement, RefObject } from 'react';
 import { WATERFALL_HISTORY_ROWS } from '../../../gpu/waterfall-renderer';
-import type { SpectrumFrame } from '../../../workers/messages';
+import type { SpectrumFrame, StreamMetrics } from '../../../workers/messages';
 import { useWaterfall } from '../model/use-waterfall';
 import type { WaterfallStatus } from '../model/use-waterfall';
+import FrequencyAxis from './FrequencyAxis';
 
 interface WaterfallPanelProps {
   latestFrame: RefObject<SpectrumFrame | null>;
   streamSession: number;
+  metrics: StreamMetrics;
 }
 
 function getStatusMessage(status: WaterfallStatus, paused: boolean): string {
@@ -26,6 +28,7 @@ function getStatusMessage(status: WaterfallStatus, paused: boolean): string {
 export default function WaterfallPanel({
   latestFrame,
   streamSession,
+  metrics,
 }: WaterfallPanelProps): ReactElement {
   const model = useWaterfall(latestFrame, streamSession);
   const isReady = model.status.state === 'ready';
@@ -96,21 +99,19 @@ export default function WaterfallPanel({
         className="waterfall-canvas"
         aria-label="Waterfall history: frequency left to right, newest spectra at the top, color indicates signal level"
       />
-      <div className="frequency-axis">
-        <span>−24 kHz</span>
-        <span>0</span>
-        <span>+24 kHz</span>
-      </div>
+      <FrequencyAxis
+        centerHz={metrics.centerHz}
+        sampleRate={metrics.sampleRate}
+      />
       <div className="color-legend" aria-label="Signal level color scale">
         <span>{model.range.floorDbfs} dBFS</span>
         <div className="color-gradient" />
         <span>{model.range.ceilingDbfs} dBFS</span>
       </div>
       <p className="hint">
-        Two fixed tones make vertical tracks. A sweeping tone makes a moving
-        track, and a short burst appears every two seconds. Each row is one
-        displayed spectrum, not a fixed wall-clock interval; inactive tabs may
-        skip spectra. Pause freezes only this history. Reconnect clears it.
+        Each row is one displayed spectrum, not a fixed wall-clock interval;
+        inactive tabs may skip spectra. Pause freezes only this history.
+        Reconnect or a change of captured band clears it.
       </p>
       {!isReady && model.status.state !== 'initializing' && (
         <p className="hint">

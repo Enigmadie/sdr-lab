@@ -16,7 +16,9 @@
     "check-types": "pnpm wasm:build && pnpm --filter @sdr-lab/web check-types",
     "lint": "prettier --write . && eslint . --fix && cargo fmt --all",
     "lint:check": "prettier --check . && eslint . --max-warnings=0 && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
-    "test": "cargo test --workspace",
+    "test": "node --experimental-strip-types --test apps/web/tests/*.test.mjs && cargo test --workspace",
+    "test:stream": "node --test apps/web/tests/stream-transport.integration.mjs",
+    "test:receiver": "node --test apps/web/tests/receiver.integration.mjs",
     "quality:check": "pnpm check-types && pnpm lint:check && pnpm test",
     "build": "pnpm wasm:build && pnpm --filter @sdr-lab/web build && cargo build -p sdr-server --release"
   },

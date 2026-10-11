@@ -1,24 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
+import { createSessionId } from '../../../shared/lib/create-session-id';
+import { createInitialMetrics } from '../../../workers/initial-metrics';
 import type {
   SpectrumFrame,
   StreamStatus,
   WorkerCommand,
   WorkerEvent,
 } from '../../../workers/messages';
-import type { StreamMetrics, WorkbenchViewProps } from '../types';
+import type { WorkbenchViewProps } from '../types';
+import { useReceiver } from './use-receiver';
 
-const METRICS_UPDATE_INTERVAL_MS = 500;
-
-const INITIAL_METRICS: StreamMetrics = {
-  processingMs: 0,
-  gaps: 0,
-  sequence: 0,
-  sampleRate: 0,
-};
-
-function getStreamUrl(): string {
+function getStreamUrl(ownerId: string): string {
   const url = new URL('/api/iq', window.location.href);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('owner_id', ownerId);
 
   return url.href;
 }
@@ -26,11 +21,13 @@ function getStreamUrl(): string {
 export function useWorkbenchPage(): WorkbenchViewProps {
   const latestFrame = useRef<SpectrumFrame | null>(null);
   const [session, setSession] = useState(0);
+  const [ownerId] = useState(createSessionId);
+  const receiver = useReceiver(ownerId, session);
   const [status, setStatus] = useState<StreamStatus>({
     type: 'status',
     state: 'connecting',
   });
-  const [metrics, setMetrics] = useState(INITIAL_METRICS);
+  const [metrics, setMetrics] = useState(createInitialMetrics);
 
   useEffect(() => {
     latestFrame.current = null;
@@ -39,7 +36,6 @@ export function useWorkbenchPage(): WorkbenchViewProps {
       new URL('../../../workers/dsp.worker.ts', import.meta.url),
       { type: 'module' },
     );
-    let lastMetricsUpdate = 0;
 
     worker.onmessage = ({ data }: MessageEvent<WorkerEvent>) => {
       if (data.type === 'status') {
@@ -47,22 +43,16 @@ export function useWorkbenchPage(): WorkbenchViewProps {
         return;
       }
 
-      // High-frequency spectra stay outside React state. Only diagnostics
-      // trigger renders, at most twice per second.
-      latestFrame.current = data;
-      const now = performance.now();
-
-      if (now - lastMetricsUpdate < METRICS_UPDATE_INTERVAL_MS) {
+      if (data.type === 'metrics') {
+        setMetrics(data.metrics);
+        worker.postMessage({
+          type: 'metrics-consumed',
+        } satisfies WorkerCommand);
         return;
       }
-
-      setMetrics({
-        processingMs: data.processingMs,
-        gaps: data.gaps,
-        sequence: data.sequence,
-        sampleRate: data.sampleRate,
-      });
-      lastMetricsUpdate = now;
+      // Spectra stay outside React state; acknowledge mailbox consumption.
+      latestFrame.current = data;
+      worker.postMessage({ type: 'frame-consumed' } satisfies WorkerCommand);
     };
 
     worker.onerror = () => {
@@ -75,15 +65,15 @@ export function useWorkbenchPage(): WorkbenchViewProps {
 
     worker.postMessage({
       type: 'connect',
-      url: getStreamUrl(),
+      url: getStreamUrl(ownerId),
     } satisfies WorkerCommand);
 
     return () => worker.terminate();
-  }, [session]);
+  }, [session, ownerId]);
 
   function handleReconnect(): void {
     setStatus({ type: 'status', state: 'connecting' });
-    setMetrics(INITIAL_METRICS);
+    setMetrics(createInitialMetrics());
     setSession((currentSession) => currentSession + 1);
   }
 
@@ -93,5 +83,6 @@ export function useWorkbenchPage(): WorkbenchViewProps {
     latestFrame,
     streamSession: session,
     onReconnect: handleReconnect,
+    receiver,
   };
 }

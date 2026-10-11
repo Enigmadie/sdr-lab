@@ -6,16 +6,19 @@ homelab machine, with an offline-friendly synthetic source.
 
 ## Current features
 
-- Axum server generates complex I/Q and streams binary WebSocket blocks.
+- Axum server streams synthetic I/Q or live RTL-SDR Blog V4 capture.
 - A browser Worker runs Rust/WASM FFT and transfers spectra to the UI.
-- Canvas 2D displays the spectrum; diagnostics show block processing time and gaps.
+- Canvas 2D displays the spectrum; diagnostics show throughput, DSP time, RTT,
+  gaps and bounded queue depth.
+- Live receiver controls tune frequency, sample rate and gain with exclusive
+  browser-session ownership. Disconnecting stops capture and releases USB.
 - WebGPU renders a 512-row waterfall using an `r32float` ring texture and WGSL.
 - Pause/resume and color-range controls change the waterfall independently of FFT.
 - GPU unavailability and device loss are reported with a retry action; the CPU
   spectrum continues to work without WebGPU.
 - The Rust server can serve the production frontend from the same origin.
 
-**No RTL-SDR access, FM audio or recording yet. FFT still runs in WASM, not on GPU.**
+**No FM audio or recording yet. FFT still runs in WASM, not on GPU.**
 The synthetic source does not touch existing radio services or hardware.
 
 ## Requirements
@@ -52,7 +55,7 @@ make build
 `make lint` formats code and applies ESLint fixes. `make lint-check` checks
 Prettier, ESLint, Rust formatting and Clippy without changing files.
 `make check-types` builds WASM bindings and checks TypeScript; `make test`
-runs Rust tests. Short aliases: `make b`, `s`, `i`, `l`, `t`.
+runs JS continuity/decoding and Rust tests. Short aliases: `make b`, `s`, `i`, `l`, `t`.
 
 For separate processes, use `make dev-client` and `make start-server`.
 All commands also remain available as pnpm scripts.
@@ -60,6 +63,19 @@ All commands also remain available as pnpm scripts.
 Production UI is served at http://127.0.0.1:3000. Run from the repository
 root or set `SDR_WEB_DIR` to the built `apps/web/dist` directory.
 `SDR_BIND` defaults to `127.0.0.1:3000`; configure it explicitly for a container.
+
+## Live RTL-SDR
+
+Install a V4-compatible `rtl-sdr` package (Debian trixie provides librtlsdr 2.0.2).
+With the dongle free from other receiver processes:
+
+```sh
+SDR_SOURCE=rtlsdr SDR_DEVICE=homelab_sdr ./target/release/sdr-server
+```
+
+The first connected browser owns the receiver. Start at 97.1 MHz, 2.4 MS/s and
+29.7 dB gain; the UI explains controls and offers narrower capture rates.
+See [Live receiver](docs/receiver.md) for antenna setup, deployment and tests.
 
 ## Layout
 
@@ -78,7 +94,7 @@ docs/protocol.md     Wire format and current limitations
 
 ## Roadmap
 
-Real RTL-SDR capture → recording/replay → mono FM audio
+Recording/replay → mono FM audio
 → GPU FFT comparison. Heavy sample buffers stay outside React state.
 Large I/Q recordings are not tracked in Git.
 

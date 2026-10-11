@@ -1,7 +1,12 @@
 /// <reference lib="webworker" />
 import init, { Spectrum } from '../../../../crates/dsp-wasm/pkg/sdr_dsp_wasm';
 import { decodeIqBlock } from '../shared/lib/decode-iq-block';
-import type { WorkerCommand, WorkerEvent } from './messages';
+import {
+  inspectContinuity,
+  type BlockIdentity,
+} from '../shared/lib/stream-continuity';
+import { createInitialMetrics } from './initial-metrics';
+import type { SpectrumFrame, WorkerCommand, WorkerEvent } from './messages';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 const wasmReady = init();
@@ -9,8 +14,17 @@ const wasmReady = init();
 let socket: WebSocket | undefined;
 let spectrum: Spectrum | undefined;
 let fftSize = 0;
-let previousSequence: number | undefined;
-let droppedBlocks = 0;
+let previousBlock: BlockIdentity | undefined;
+let metrics = createInitialMetrics();
+let diagnosticsTimer: ReturnType<typeof setInterval> | undefined;
+let lastBlockAt: number | undefined;
+let intervalStart = 0;
+let receivedBytes = 0;
+let receivedBlocks = 0;
+let pendingPing: number | undefined;
+let frameInFlight = false;
+let pendingFrame: SpectrumFrame | undefined;
+let metricsInFlight = false;
 let connectionGeneration = 0;
 
 function send(event: WorkerEvent, transfer: Transferable[] = []): void {
@@ -18,6 +32,8 @@ function send(event: WorkerEvent, transfer: Transferable[] = []): void {
 }
 
 function stop(): void {
+  clearInterval(diagnosticsTimer);
+  diagnosticsTimer = undefined;
   if (socket) {
     socket.onopen = null;
     socket.onmessage = null;
@@ -30,6 +46,44 @@ function stop(): void {
   spectrum?.free();
   spectrum = undefined;
   fftSize = 0;
+  pendingFrame = undefined;
+}
+
+function publishFrame(frame: SpectrumFrame): void {
+  if (frameInFlight) {
+    if (pendingFrame) {
+      metrics.coalescedFrames++;
+    }
+    pendingFrame = frame;
+    return;
+  }
+  frameInFlight = true;
+  send(frame, [frame.bins.buffer as ArrayBuffer]);
+}
+
+function reportMetrics(): void {
+  const now = performance.now();
+  const seconds = (now - intervalStart) / 1000;
+  metrics.blocksPerSecond = receivedBlocks / seconds;
+  metrics.bytesPerSecond = receivedBytes / seconds;
+  metrics.lastBlockAgeMs = lastBlockAt === undefined ? null : now - lastBlockAt;
+  metrics.displayQueueDepth = Number(frameInFlight) + Number(!!pendingFrame);
+  if (!metricsInFlight) {
+    metricsInFlight = true;
+    send({ type: 'metrics', metrics: { ...metrics } });
+  }
+  intervalStart = now;
+  receivedBlocks = 0;
+  receivedBytes = 0;
+  if (socket?.readyState === WebSocket.OPEN) {
+    if (pendingPing === undefined) {
+      pendingPing = now;
+      socket.send(`ping:${now}`);
+    } else if (now - pendingPing > 2000) {
+      metrics.rttMs = null;
+      pendingPing = undefined;
+    }
+  }
 }
 
 function reportError(error: unknown): void {
@@ -47,32 +101,65 @@ function getSpectrum(size: number): Spectrum {
   return spectrum;
 }
 
-function processBlock({ data: buffer }: MessageEvent<ArrayBuffer>): void {
+function processBlock({
+  data: buffer,
+}: MessageEvent<ArrayBuffer | string>): void {
   try {
+    if (typeof buffer === 'string') {
+      if (buffer.startsWith('error:')) {
+        reportError(buffer.slice(6));
+        return;
+      }
+      if (pendingPing !== undefined && buffer === `ping:${pendingPing}`) {
+        metrics.rttMs = performance.now() - pendingPing;
+        pendingPing = undefined;
+      }
+      return;
+    }
     const start = performance.now();
     const block = decodeIqBlock(buffer);
-
-    if (previousSequence !== undefined) {
-      // Unsigned subtraction also handles sequence wraparound at 2^32.
-      const missingBlocks = (block.sequence - previousSequence - 1) >>> 0;
-      droppedBlocks += missingBlocks;
+    lastBlockAt = start;
+    receivedBytes += buffer.byteLength;
+    receivedBlocks++;
+    const continuity = inspectContinuity(previousBlock, block);
+    if (continuity.reset) {
+      metrics.discontinuities++;
+      spectrum?.free();
+      spectrum = undefined;
+      fftSize = 0;
     }
-
-    previousSequence = block.sequence;
-
-    const bins = getSpectrum(block.count).process(block.samples);
-
-    send(
-      {
-        type: 'spectrum',
-        bins,
-        sampleRate: block.sampleRate,
-        sequence: block.sequence,
-        gaps: droppedBlocks,
-        processingMs: performance.now() - start,
-      },
-      [bins.buffer as ArrayBuffer],
+    if (continuity.rejected) {
+      metrics.rejectedBlocks++;
+      socket?.send(`ack:${block.sequence}`);
+      return;
+    }
+    metrics.gaps += continuity.missing;
+    previousBlock = {
+      sequence: block.sequence,
+      sampleRate: block.sampleRate,
+      count: block.count,
+      centerHz: block.centerHz,
+    };
+    const bins = getSpectrum(block.samples.length / 2).process(block.samples);
+    metrics.processingMs = performance.now() - start;
+    metrics.maxProcessingMs = Math.max(
+      metrics.maxProcessingMs,
+      metrics.processingMs,
     );
+    metrics.sequence = block.sequence;
+    metrics.sampleRate = block.sampleRate;
+    metrics.centerHz = block.centerHz;
+    metrics.blockDurationMs = (block.count / block.sampleRate) * 1000;
+    socket?.send(`ack:${block.sequence}`);
+    publishFrame({
+      type: 'spectrum',
+      bins,
+      sampleRate: block.sampleRate,
+      centerHz: block.centerHz,
+      sequence: block.sequence,
+      gaps: metrics.gaps,
+      processingMs: metrics.processingMs,
+    });
   } catch (error) {
     reportError(error);
   }
@@ -81,11 +168,30 @@ function processBlock({ data: buffer }: MessageEvent<ArrayBuffer>): void {
 async function handleCommand({
   data,
 }: MessageEvent<WorkerCommand>): Promise<void> {
+  if (data.type === 'metrics-consumed') {
+    metricsInFlight = false;
+    return;
+  }
+  if (data.type === 'frame-consumed') {
+    frameInFlight = false;
+    if (pendingFrame) {
+      const frame = pendingFrame;
+      pendingFrame = undefined;
+      publishFrame(frame);
+    }
+    return;
+  }
   const currentGeneration = ++connectionGeneration;
 
   stop();
-  previousSequence = undefined;
-  droppedBlocks = 0;
+  previousBlock = undefined;
+  metrics = createInitialMetrics();
+  lastBlockAt = undefined;
+  pendingPing = undefined;
+  frameInFlight = false;
+  metricsInFlight = false;
+  receivedBytes = 0;
+  receivedBlocks = 0;
 
   if (data.type === 'stop') {
     return;
@@ -104,8 +210,16 @@ async function handleCommand({
     socket = new WebSocket(data.url);
     socket.binaryType = 'arraybuffer';
     socket.onmessage = processBlock;
-    socket.onopen = () => send({ type: 'status', state: 'live' });
-    socket.onclose = () => send({ type: 'status', state: 'disconnected' });
+    socket.onopen = () => {
+      intervalStart = performance.now();
+      diagnosticsTimer = setInterval(reportMetrics, 500);
+      send({ type: 'status', state: 'live' });
+    };
+    socket.onclose = () => {
+      reportMetrics();
+      stop();
+      send({ type: 'status', state: 'disconnected' });
+    };
     socket.onerror = () =>
       reportError('Unable to connect to the signal server.');
   } catch (error) {

@@ -1,15 +1,18 @@
 import type { ReactElement, RefObject } from 'react';
-import type { SpectrumFrame } from '../../../workers/messages';
+import type { SpectrumFrame, StreamMetrics } from '../../../workers/messages';
 import { useSpectrumCanvas } from '../model/use-spectrum-canvas';
+import FrequencyAxis from './FrequencyAxis';
 
 interface SpectrumPanelProps {
   latestFrame: RefObject<SpectrumFrame | null>;
   onReconnect: () => void;
+  metrics: StreamMetrics;
 }
 
 export default function SpectrumPanel({
   latestFrame,
   onReconnect,
+  metrics,
 }: SpectrumPanelProps): ReactElement {
   const canvasRef = useSpectrumCanvas(latestFrame);
 
@@ -29,18 +32,18 @@ export default function SpectrumPanel({
         <span className="axis-label">0 … −100 dBFS</span>
         <canvas
           ref={canvasRef}
-          aria-label="Synthetic signal spectrum with peaks at −10.5 and +6 kHz"
+          aria-label="Signal spectrum across the captured frequency band"
         />
       </div>
 
-      <div className="frequency-axis">
-        <span>−24 kHz</span>
-        <span>0</span>
-        <span>+24 kHz</span>
-      </div>
+      <FrequencyAxis
+        centerHz={metrics.centerHz}
+        sampleRate={metrics.sampleRate}
+      />
       <p className="hint">
-        Fixed tones at −10.5 and +6 kHz, a sweeping tone and periodic bursts.
-        Frequencies are relative to the center of the captured band.
+        {metrics.centerHz
+          ? 'Live radio spectrum. A broadcast FM station usually occupies a broad patch around its frequency. The latest 2048 samples of each block form one FFT snapshot; a narrow center spike may be a receiver artifact.'
+          : 'Fixed tones at −10.5 and +6 kHz, a sweeping tone and periodic bursts. Frequencies are relative to the center of the captured band.'}
       </p>
     </section>
   );

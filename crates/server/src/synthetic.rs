@@ -22,6 +22,12 @@ impl SyntheticSource {
         (0..count).map(|_| self.next_sample()).collect()
     }
 
+    pub fn skip_samples(&mut self, count: usize) {
+        for _ in 0..count {
+            self.next_sample();
+        }
+    }
+
     fn next_sample(&mut self) -> [f32; 2] {
         let time = self.sample_index as f64 / self.sample_rate as f64;
         self.sample_index += 1;
@@ -60,6 +66,15 @@ impl SyntheticSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skipping_preserves_the_source_timeline() {
+        let mut whole = SyntheticSource::new(48_000);
+        let mut skipped = SyntheticSource::new(48_000);
+        whole.next_block(4096);
+        skipped.skip_samples(4096);
+        assert_eq!(whole.next_block(2048), skipped.next_block(2048));
+    }
 
     #[test]
     fn block_boundaries_do_not_reset_phase_or_noise() {

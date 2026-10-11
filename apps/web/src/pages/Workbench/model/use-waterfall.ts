@@ -61,6 +61,7 @@ export function useWaterfall(
     let lastFrame: SpectrumFrame | null = null;
     let lastRange: WaterfallRange | null = null;
     let lastSession = settings.current.streamSession;
+    let lastBand: string | null = null;
 
     function fail(state: 'lost' | 'error', detail: string): void {
       controller.abort();
@@ -87,6 +88,15 @@ export function useWaterfall(
         }
 
         const frame = latestFrame.current;
+        if (frame) {
+          const band = `${frame.centerHz}:${frame.sampleRate}`;
+          if (lastBand !== null && band !== lastBand) {
+            renderer.clear();
+            lastFrame = null;
+            needsRender = true;
+          }
+          lastBand = band;
+        }
 
         if (!currentSettings.paused && frame && frame !== lastFrame) {
           renderer.append(frame.bins);
