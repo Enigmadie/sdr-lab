@@ -19,6 +19,7 @@
     "test": "node --experimental-strip-types --test apps/web/tests/*.test.mjs && cargo test --workspace",
     "test:stream": "node --test apps/web/tests/stream-transport.integration.mjs",
     "test:receiver": "node --test apps/web/tests/receiver.integration.mjs",
+    "test:recordings": "cargo build -p sdr-server && node --test apps/web/tests/recordings.integration.mjs",
     "quality:check": "pnpm check-types && pnpm lint:check && pnpm test",
     "build": "pnpm wasm:build && pnpm --filter @sdr-lab/web build && cargo build -p sdr-server --release"
   },

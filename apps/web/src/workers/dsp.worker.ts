@@ -26,6 +26,17 @@ let frameInFlight = false;
 let pendingFrame: SpectrumFrame | undefined;
 let metricsInFlight = false;
 let connectionGeneration = 0;
+let positionInFlight = false;
+let pendingPosition: number | undefined;
+
+function publishPosition(seconds: number): void {
+  if (positionInFlight) {
+    pendingPosition = seconds;
+    return;
+  }
+  positionInFlight = true;
+  send({ type: 'playback-position', seconds });
+}
 
 function send(event: WorkerEvent, transfer: Transferable[] = []): void {
   scope.postMessage(event, transfer);
@@ -106,6 +117,24 @@ function processBlock({
 }: MessageEvent<ArrayBuffer | string>): void {
   try {
     if (typeof buffer === 'string') {
+      if (buffer === 'replay-ended') {
+        reportMetrics();
+        stop();
+        send({
+          type: 'status',
+          state: 'disconnected',
+          detail: 'Playback finished.',
+        });
+        return;
+      }
+      if (buffer.startsWith('position:')) {
+        publishPosition(Number(buffer.slice(9)));
+        return;
+      }
+      if (buffer.startsWith('record-error:')) {
+        send({ type: 'record-error', detail: buffer.slice(13) });
+        return;
+      }
       if (buffer.startsWith('error:')) {
         reportError(buffer.slice(6));
         return;
@@ -168,6 +197,30 @@ function processBlock({
 async function handleCommand({
   data,
 }: MessageEvent<WorkerCommand>): Promise<void> {
+  if (data.type === 'playback-position-consumed') {
+    positionInFlight = false;
+    if (pendingPosition !== undefined) {
+      const seconds = pendingPosition;
+      pendingPosition = undefined;
+      publishPosition(seconds);
+    }
+    return;
+  }
+  if (data.type === 'record' || data.type === 'record-stop') {
+    if (socket?.readyState !== WebSocket.OPEN) {
+      send({
+        type: 'record-error',
+        detail: 'Connect to a capture source first.',
+      });
+      return;
+    }
+    socket.send(
+      data.type === 'record-stop'
+        ? 'record-stop'
+        : `record:${JSON.stringify({ name: data.name, seconds: data.seconds })}`,
+    );
+    return;
+  }
   if (data.type === 'metrics-consumed') {
     metricsInFlight = false;
     return;
@@ -194,8 +247,12 @@ async function handleCommand({
   receivedBlocks = 0;
 
   if (data.type === 'stop') {
+    positionInFlight = false;
+    pendingPosition = undefined;
     return;
   }
+  positionInFlight = false;
+  pendingPosition = undefined;
 
   send({ type: 'status', state: 'connecting' });
 

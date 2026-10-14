@@ -1,0 +1,4 @@
+export const MAX_RECORDING_NAME_LENGTH = 120;
+export const DEFAULT_MAX_RECORDING_SECONDS = 60;
+export const DEFAULT_RECORDING_NAME = 'Signal fixture';
+export const DEFAULT_RECORDING_SECONDS = 10;

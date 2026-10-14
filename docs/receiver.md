@@ -34,6 +34,8 @@ the raw payload: 2.4 MS/s is approximately 4.8 MB/s plus framing overhead, rathe
 than 19.2 MB/s of float32 expansion. The worker converts only the latest 2048
 samples to float32 for a spectrum snapshot. This is intentionally sampled
 visualization, not processing every sample for demodulation or recording.
+The server's [recording writer](recordings.md) separately saves complete capture
+blocks before browser ACK shedding, preserving all captured samples for replay.
 
 The server continuously drains capture stdout. While a WebSocket block awaits
 ACK, subsequent capture blocks are discarded and their sequence numbers remain

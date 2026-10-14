@@ -59,6 +59,7 @@ pub struct AppState {
     pub executable: Arc<String>,
     pub owner: Arc<Mutex<Option<String>>>,
     pub settings: watch::Sender<ReceiverSettings>,
+    pub recordings: crate::recordings::Store,
 }
 
 impl AppState {
@@ -76,6 +77,7 @@ impl AppState {
             ),
             owner: Arc::new(Mutex::new(None)),
             settings,
+            recordings: crate::recordings::Store::from_env()?,
         })
     }
 

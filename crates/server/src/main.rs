@@ -18,6 +18,7 @@ const STREAM_TIMEOUT: Duration = Duration::from_secs(2);
 
 mod live;
 mod receiver;
+mod recordings;
 mod synthetic;
 use receiver::{AppState, ReceiverSettings};
 
@@ -77,12 +78,13 @@ async fn iq(
                     .await;
             }
         } else {
-            stream_synthetic(socket).await;
+            stream_synthetic(socket, state).await;
         }
     })
 }
 
-async fn stream_synthetic(mut socket: WebSocket) {
+async fn stream_synthetic(mut socket: WebSocket, state: AppState) {
+    let mut recorder = None;
     let block_duration = Duration::from_secs_f64(BLOCK_SIZE as f64 / SAMPLE_RATE as f64);
     let started_at = Instant::now();
     let mut tick = interval(block_duration);
@@ -96,6 +98,12 @@ async fn stream_synthetic(mut socket: WebSocket) {
                 match message {
                     Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                     Some(Ok(Message::Text(text))) => {
+                        if text.starts_with("record") {
+                            if let Err(detail) = recordings::control(&text, &state, &mut recorder, ReceiverSettings::default()).await {
+                                let _ = socket.send(Message::Text(format!("record-error:{detail}").into())).await;
+                            }
+                            continue;
+                        }
                         if let Some(acknowledged) = text.strip_prefix("ack:").and_then(|value| value.parse::<u32>().ok()) {
                             if pending.is_some_and(|(sequence, _)| sequence == acknowledged) {
                                 pending = None;
@@ -121,10 +129,11 @@ async fn stream_synthetic(mut socket: WebSocket) {
                 let samples = source.next_block(BLOCK_SIZE);
                 let current_sequence = next_block as u32;
                 next_block += 1;
+                let bytes = sdr_protocol::encode_iq(current_sequence, SAMPLE_RATE, &samples);
+                if let Some(recording) = recorder.as_mut() { recording.offer(&bytes); }
                 if pending.is_some() {
                     continue;
                 }
-                let bytes = sdr_protocol::encode_iq(current_sequence, SAMPLE_RATE, &samples);
                 // A stalled client is disconnected instead of accumulating a backlog.
                 if !matches!(timeout(STREAM_TIMEOUT, socket.send(Message::Binary(bytes.into()))).await, Ok(Ok(()))) {
                     break;
@@ -132,6 +141,9 @@ async fn stream_synthetic(mut socket: WebSocket) {
                 pending = Some((current_sequence, Instant::now()));
             }
         }
+    }
+    if let Some(recording) = recorder {
+        recording.finish("Capture disconnected.").await;
     }
     let _ = timeout(STREAM_TIMEOUT, socket.close()).await;
 }
@@ -142,15 +154,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "127.0.0.1:3000".into())
         .parse()?;
     let web_dir = std::env::var("SDR_WEB_DIR").unwrap_or_else(|_| "apps/web/dist".into());
+    let state = AppState::from_env()?;
+    state.recordings.initialize().await?;
     let app = Router::new()
         .route("/api/receiver", put(receiver::tune))
         .route("/api/status", get(status))
         .route("/api/iq", get(iq))
+        .route("/api/recordings", get(recordings::catalog))
+        .route(
+            "/api/recordings/{id}",
+            put(recordings::rename).delete(recordings::delete),
+        )
+        .route("/api/recordings/{id}/replay", get(recordings::replay))
         .fallback_service(
             ServeDir::new(&web_dir)
                 .not_found_service(ServeFile::new(format!("{web_dir}/index.html"))),
         )
-        .with_state(AppState::from_env()?);
+        .with_state(state);
     let listener = tokio::net::TcpListener::bind(address).await?;
     println!("SDR Lab server: http://{address}");
     axum::serve(listener, app)

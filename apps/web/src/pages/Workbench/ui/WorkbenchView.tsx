@@ -2,9 +2,25 @@ import type { ReactElement } from 'react';
 import type { WorkbenchViewProps } from '../types';
 import Diagnostics from './Diagnostics';
 import ReceiverControls from './ReceiverControls';
+import RecordingsPanel from './RecordingsPanel';
 import SpectrumPanel from './SpectrumPanel';
 import StreamStatusBadge from './StreamStatusBadge';
 import WaterfallPanel from './WaterfallPanel';
+
+function getWorkbenchDescription(
+  isReplaying: boolean,
+  source: string | undefined,
+): string {
+  if (isReplaying) {
+    return 'Replaying saved I/Q through the current DSP pipeline. No receiver is opened for replay.';
+  }
+
+  if (source === 'rtlsdr') {
+    return 'Live RTL-SDR capture. The spectrum shows the band around the tuned center frequency; your browser processes and renders the signal.';
+  }
+
+  return 'A browser workbench for radio signal processing. This session uses a synthetic source; no RTL-SDR hardware is connected.';
+}
 
 export default function WorkbenchView({
   status,
@@ -13,7 +29,20 @@ export default function WorkbenchView({
   streamSession,
   onReconnect,
   receiver,
+  recordings,
+  capture,
+  playback,
 }: WorkbenchViewProps): ReactElement {
+  const isReplaying = playback.recordingId !== null;
+  const isConnected = status.state === 'live';
+  const isStreamError = status.state === 'error';
+  const description = getWorkbenchDescription(
+    isReplaying,
+    receiver.info?.source,
+  );
+  const showReceiverControls =
+    !isReplaying && receiver.info?.source === 'rtlsdr';
+
   return (
     <main>
       <header>
@@ -24,16 +53,13 @@ export default function WorkbenchView({
         <StreamStatusBadge status={status} />
       </header>
 
-      <p className="intro">
-        {receiver.info?.source === 'rtlsdr'
-          ? 'Live RTL-SDR capture. The spectrum shows the band around the tuned center frequency; your browser processes and renders the signal.'
-          : 'A browser workbench for radio signal processing. This session uses a synthetic source; no RTL-SDR hardware is connected.'}
-      </p>
-      {receiver.info?.source === 'rtlsdr' && (
+      <p className="intro">{description}</p>
+
+      {showReceiverControls && (
         <ReceiverControls
           key={streamSession}
           receiver={receiver}
-          connected={status.state === 'live'}
+          connected={isConnected}
         />
       )}
       {receiver.error && receiver.info?.source !== 'rtlsdr' && (
@@ -49,7 +75,10 @@ export default function WorkbenchView({
       />
 
       {status.detail && (
-        <p className="error-message" role="alert">
+        <p
+          className={isStreamError ? 'error-message' : 'hint'}
+          role={isStreamError ? 'alert' : 'status'}
+        >
           {status.detail}
         </p>
       )}
@@ -62,9 +91,15 @@ export default function WorkbenchView({
         metrics={metrics}
       />
 
+      <RecordingsPanel
+        recordings={recordings}
+        capture={capture}
+        playback={playback}
+        isConnected={isConnected}
+      />
       <footer>
         FFT runs in Rust/WASM; waterfall rendering runs on WebGPU when
-        available. Next: recording and replay → FM audio.
+        available. Next: mono FM audio.
       </footer>
     </main>
   );

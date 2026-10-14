@@ -123,6 +123,62 @@ canvas {
 .receiver-panel {
   margin-bottom: 24px;
 }
+.recordings-panel {
+  margin-top: 28px;
+}
+.recording-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+.recording-card,
+.playback-controls {
+  padding: 16px;
+  border: 1px solid #293949;
+  border-radius: 12px;
+}
+.recording-card.selected {
+  border-color: #65e4c0;
+}
+.recording-card h3 {
+  overflow-wrap: anywhere;
+}
+.recording-actions {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+.recording-actions label {
+  color: #a9bacb;
+  font-size: 13px;
+  max-width: 100%;
+}
+.recording-actions input {
+  display: block;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #3c566e;
+  border-radius: 8px;
+  color: #e4edf5;
+  background: #101720;
+}
+.storage-path {
+  display: block;
+  overflow-wrap: anywhere;
+  margin: 12px 0;
+  font-size: 12px;
+  color: #65e4c0;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
 .receiver-controls {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

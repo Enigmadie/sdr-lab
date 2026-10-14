@@ -17,8 +17,10 @@ homelab machine, with an offline-friendly synthetic source.
 - GPU unavailability and device loss are reported with a retry action; the CPU
   spectrum continues to work without WebGPU.
 - The Rust server can serve the production frontend from the same origin.
+- Short full-I/Q file recordings have a visible catalog with storage paths,
+  metadata, rename/delete, and chunked replay through the current FFT/waterfall.
 
-**No FM audio or recording yet. FFT still runs in WASM, not on GPU.**
+**No FM audio yet. FFT still runs in WASM, not on GPU.**
 The synthetic source does not touch existing radio services or hardware.
 
 ## Requirements
@@ -77,6 +79,19 @@ The first connected browser owns the receiver. Start at 97.1 MHz, 2.4 MS/s and
 29.7 dB gain; the UI explains controls and offers narrower capture rates.
 See [Live receiver](docs/receiver.md) for antenna setup, deployment and tests.
 
+## Recordings
+
+Use the **Recordings** panel to capture a named 1–60-second I/Q fixture and
+replay it through the current DSP implementation. The catalog shows where
+each file lives, its capture settings, duration and size. Replay supports
+pause/resume, restart and seeking; rename/delete keep fixtures organized.
+
+Files default to `recordings/` under the server's working directory. Set
+`SDR_RECORDINGS_DIR` to a persistent writable directory for deployment.
+See [Recordings](docs/recordings.md) for storage, limits, format and checks.
+`pnpm test:recordings` runs hardware-independent recording/replay integration
+tests with temporary files and isolated servers.
+
 ## Layout
 
 ```text
@@ -94,8 +109,8 @@ docs/protocol.md     Wire format and current limitations
 
 ## Roadmap
 
-Recording/replay → mono FM audio
-→ GPU FFT comparison. Heavy sample buffers stay outside React state.
+Mono FM audio → GPU FFT comparison; `.cs16` import remains a recording follow-up.
+Heavy sample buffers stay outside React state.
 Large I/Q recordings are not tracked in Git.
 
 WebGPU runs on the browser machine and requires a secure context (localhost

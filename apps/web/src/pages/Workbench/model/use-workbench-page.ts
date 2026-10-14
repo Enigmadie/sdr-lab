@@ -1,88 +1,77 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { createSessionId } from '../../../shared/lib/create-session-id';
-import { createInitialMetrics } from '../../../workers/initial-metrics';
-import type {
-  SpectrumFrame,
-  StreamStatus,
-  WorkerCommand,
-  WorkerEvent,
-} from '../../../workers/messages';
 import type { WorkbenchViewProps } from '../types';
 import { useReceiver } from './use-receiver';
-
-function getStreamUrl(ownerId: string): string {
-  const url = new URL('/api/iq', window.location.href);
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.searchParams.set('owner_id', ownerId);
-
-  return url.href;
-}
+import { useRecordings } from './use-recordings';
+import { useSignalStream } from './use-signal-stream';
 
 export function useWorkbenchPage(): WorkbenchViewProps {
-  const latestFrame = useRef<SpectrumFrame | null>(null);
-  const [session, setSession] = useState(0);
   const [ownerId] = useState(createSessionId);
+  const [session, setSession] = useState(0);
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [playbackStart, setPlaybackStart] = useState(0);
   const receiver = useReceiver(ownerId, session);
-  const [status, setStatus] = useState<StreamStatus>({
-    type: 'status',
-    state: 'connecting',
+  const recordings = useRecordings();
+  const stream = useSignalStream({
+    ownerId,
+    recordingId,
+    startSeconds: playbackStart,
+    session,
   });
-  const [metrics, setMetrics] = useState(createInitialMetrics);
-
-  useEffect(() => {
-    latestFrame.current = null;
-
-    const worker = new Worker(
-      new URL('../../../workers/dsp.worker.ts', import.meta.url),
-      { type: 'module' },
-    );
-
-    worker.onmessage = ({ data }: MessageEvent<WorkerEvent>) => {
-      if (data.type === 'status') {
-        setStatus(data);
-        return;
-      }
-
-      if (data.type === 'metrics') {
-        setMetrics(data.metrics);
-        worker.postMessage({
-          type: 'metrics-consumed',
-        } satisfies WorkerCommand);
-        return;
-      }
-      // Spectra stay outside React state; acknowledge mailbox consumption.
-      latestFrame.current = data;
-      worker.postMessage({ type: 'frame-consumed' } satisfies WorkerCommand);
-    };
-
-    worker.onerror = () => {
-      setStatus({
-        type: 'status',
-        state: 'error',
-        detail: 'The DSP worker failed. Check the WASM build and reload.',
-      });
-    };
-
-    worker.postMessage({
-      type: 'connect',
-      url: getStreamUrl(ownerId),
-    } satisfies WorkerCommand);
-
-    return () => worker.terminate();
-  }, [session, ownerId]);
 
   function handleReconnect(): void {
-    setStatus({ type: 'status', state: 'connecting' });
-    setMetrics(createInitialMetrics());
+    stream.prepareConnection(playbackStart);
     setSession((currentSession) => currentSession + 1);
   }
 
+  function handlePlay(id: string, startSeconds: number): void {
+    setRecordingId(id);
+    setPlaybackStart(startSeconds);
+    stream.prepareConnection(startSeconds);
+    setSession((currentSession) => currentSession + 1);
+  }
+
+  function handleReturnToCapture(): void {
+    setRecordingId(null);
+    setPlaybackStart(0);
+    stream.prepareConnection();
+    setSession((currentSession) => currentSession + 1);
+  }
+
+  function handleResume(): void {
+    if (recordingId !== null) {
+      handlePlay(recordingId, stream.playbackPosition);
+    }
+  }
+
+  function handleRestart(): void {
+    if (recordingId !== null) {
+      handlePlay(recordingId, 0);
+    }
+  }
+
   return {
-    status,
-    metrics,
-    latestFrame,
+    status: stream.status,
+    metrics: stream.metrics,
+    latestFrame: stream.latestFrame,
     streamSession: session,
-    onReconnect: handleReconnect,
     receiver,
+    recordings,
+    onReconnect: handleReconnect,
+    capture: {
+      error: stream.recordError,
+      onStart: stream.startRecording,
+      onStop: stream.stopRecording,
+    },
+    playback: {
+      recordingId,
+      positionSeconds: stream.playbackPosition,
+      isPlaying: stream.status.state === 'live',
+      onPlay: handlePlay,
+      onPause: stream.pausePlayback,
+      onResume: handleResume,
+      onRestart: handleRestart,
+      onReturnToCapture: handleReturnToCapture,
+    },
   };
 }

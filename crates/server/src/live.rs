@@ -18,6 +18,7 @@ async fn error(socket: &mut WebSocket, detail: &str) {
 }
 
 pub async fn stream(mut socket: WebSocket, state: AppState, owner_id: String) {
+    let mut recorder = None;
     let _lease = match state.claim(owner_id) {
         Ok(lease) => lease,
         Err(detail) => {
@@ -45,6 +46,12 @@ pub async fn stream(mut socket: WebSocket, state: AppState, owner_id: String) {
             message = socket.recv() => {
                 match message {
                     Some(Ok(Message::Text(text))) => {
+                        if text.starts_with("record") {
+                            if let Err(detail) = crate::recordings::control(&text, &state, &mut recorder, settings).await {
+                                let _ = socket.send(Message::Text(format!("record-error:{detail}").into())).await;
+                            }
+                            continue;
+                        }
                         if let Some(ack) = text.strip_prefix("ack:").and_then(|value| value.parse::<u32>().ok()) {
                             if pending.is_some_and(|(sequence, _)| sequence == ack) { pending = None; }
                         } else if text.starts_with("ping:") && text.len() <= 64
@@ -63,8 +70,9 @@ pub async fn stream(mut socket: WebSocket, state: AppState, owner_id: String) {
                     let current_sequence = sequence;
                     sequence = sequence.wrapping_add(1);
                     filled = 0;
+                    let bytes = sdr_protocol::encode_rtl_iq(current_sequence, settings.sample_rate, settings.center_hz, &buffer);
+                    if let Some(recording) = recorder.as_mut() { recording.offer(&bytes); }
                     if pending.is_none() {
-                        let bytes = sdr_protocol::encode_rtl_iq(current_sequence, settings.sample_rate, settings.center_hz, &buffer);
                         if !matches!(timeout(STREAM_TIMEOUT, socket.send(Message::Binary(bytes.into()))).await, Ok(Ok(()))) { break; }
                         pending = Some((current_sequence, Instant::now()));
                     }
@@ -72,6 +80,7 @@ pub async fn stream(mut socket: WebSocket, state: AppState, owner_id: String) {
             }
             result = updates.changed() => {
                 if result.is_err() { break; }
+                if let Some(recording) = recorder.take() { recording.finish("Stopped at receiver retune boundary.").await; }
                 settings = *updates.borrow_and_update();
                 capture.stop().await;
                 capture = match Capture::start(&state, settings) {
@@ -92,5 +101,8 @@ pub async fn stream(mut socket: WebSocket, state: AppState, owner_id: String) {
         }
     }
     capture.stop().await;
+    if let Some(recording) = recorder {
+        recording.finish("Capture disconnected.").await;
+    }
     let _ = timeout(STREAM_TIMEOUT, socket.close()).await;
 }

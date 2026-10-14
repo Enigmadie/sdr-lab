@@ -526,6 +526,7 @@ dependencies = [
  "futures-util",
  "sdr-protocol",
  "serde",
+ "serde_json",
  "tokio",
  "tower-http",
 ]

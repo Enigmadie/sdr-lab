@@ -1,6 +1,9 @@
 export type WorkerCommand =
   | { type: 'connect'; url: string }
   | { type: 'stop' }
+  | { type: 'record'; name: string; seconds: number }
+  | { type: 'record-stop' }
+  | { type: 'playback-position-consumed' }
   | { type: 'metrics-consumed' }
   | { type: 'frame-consumed' };
 
@@ -39,4 +42,8 @@ export interface SpectrumFrame {
 }
 
 export type WorkerEvent =
-  StreamStatus | SpectrumFrame | { type: 'metrics'; metrics: StreamMetrics };
+  | StreamStatus
+  | SpectrumFrame
+  | { type: 'metrics'; metrics: StreamMetrics }
+  | { type: 'record-error'; detail: string }
+  | { type: 'playback-position'; seconds: number };
