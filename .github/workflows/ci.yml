@@ -1,0 +1,171 @@
+name: CI and image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@1.87.0
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
+      - run: make quality-check
+      - run: pnpm test:recordings
+      - name: Receiver ownership and tuning with managed RTL fixture
+        run: |
+          set -euo pipefail
+          SDR_SOURCE=rtlsdr SDR_BIND=127.0.0.1:3002 \
+            SDR_RTL_EXECUTABLE="$PWD/apps/web/tests/fixtures/rtl-sdr.mjs" \
+            SDR_RECORDINGS_DIR="$PWD/target/ci-receiver-recordings" \
+            ./target/debug/sdr-server > target/receiver.log 2>&1 &
+          server_pid=$!
+          trap 'kill -TERM "$server_pid" 2>/dev/null || true; wait "$server_pid" || true' EXIT
+          for _ in {1..100}; do
+            if curl --fail --silent http://127.0.0.1:3002/api/status > /dev/null; then
+              break
+            fi
+            sleep 0.1
+          done
+          pnpm test:receiver
+      - run: make build
+      - name: Production smoke and stream transport
+        run: |
+          set -euo pipefail
+          mkdir -p target/ci-recordings
+          SDR_RECORDINGS_DIR="$PWD/target/ci-recordings" ./target/release/sdr-server > target/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill -TERM "$server_pid" 2>/dev/null || true; wait "$server_pid" || true' EXIT
+          pnpm test:production
+          pnpm test:stream
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: server-log
+          path: |
+            target/server.log
+            target/receiver.log
+          if-no-files-found: ignore
+
+  image:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          build-args: VCS_REF=${{ github.sha }}
+          tags: ghcr.io/enigmadie/sdr-lab:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test the exact production image without USB
+        run: |
+          set -euo pipefail
+          docker volume create sdr-smoke-recordings
+          docker run --detach --name sdr-smoke --publish 127.0.0.1:3000:3000 \
+            --mount source=sdr-smoke-recordings,target=/data/recordings \
+            ghcr.io/enigmadie/sdr-lab:sha-${{ github.sha }}
+          trap 'docker logs sdr-smoke; docker rm -f sdr-smoke; docker volume rm sdr-smoke-recordings' EXIT
+          pnpm test:production
+          pnpm test:stream
+          docker exec sdr-smoke sh -ec 'test "$(id -u)" = 10001; command -v rtl_sdr; dpkg-query -W librtlsdr0'
+          docker stop --time 10 sdr-smoke
+          test "$(docker inspect --format '{{.State.ExitCode}}' sdr-smoke)" = 0
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish only the tested image
+        id: publish
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          image=ghcr.io/enigmadie/sdr-lab:sha-${{ github.sha }}
+          docker push "$image"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image")
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
+
+  promote:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.SDR_GITOPS_PROMOTION_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/checkout@v4
+        with:
+          repository: Enigmadie/homelab-gitops
+          token: ${{ secrets.SDR_GITOPS_TOKEN }}
+          path: gitops
+          persist-credentials: false
+      - name: Prepare digest and persistent storage (preserve radio mode)
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}
+        run: node scripts/promote-image.mjs gitops/workloads/radio/lab.yaml "$IMAGE"
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.SDR_GITOPS_TOKEN }}
+          path: gitops
+          branch: automation/sdr-lab-image
+          add-paths: workloads/radio/lab.yaml
+          commit-message: 'chore(radio): update SDR Lab image'
+          title: 'chore(radio): update SDR Lab image'
+          body: |
+            Tested source: ${{ github.sha }}
+            Image: `${{ needs.image.outputs.image }}`
+
+            Preserves replicas/radio mode, USB access, Service and LAN ingress.
+            Uses persistent OptiPlex storage at `/opt/sdr-lab/recordings`.
+            Merge to deploy through ArgoCD; no automatic merge or kubectl access.

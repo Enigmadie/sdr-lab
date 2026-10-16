@@ -66,6 +66,12 @@ Production UI is served at http://127.0.0.1:3000. Run from the repository
 root or set `SDR_WEB_DIR` to the built `apps/web/dist` directory.
 `SDR_BIND` defaults to `127.0.0.1:3000`; configure it explicitly for a container.
 
+The multi-stage `Dockerfile` packages the server, UI/WASM and V4-compatible
+receiver tools. CI checks and smoke-tests the image before publishing; opt-in CD
+opens a digest-pinned GitOps PR without direct cluster access. Browser/IQ traffic
+stays on LAN. See [Production deployment](docs/deployment.md) for setup, storage,
+local image checks and the first-deployment acceptance checklist.
+
 ## Live RTL-SDR
 
 Install a V4-compatible `rtl-sdr` package (Debian trixie provides librtlsdr 2.0.2).

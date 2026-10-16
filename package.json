@@ -15,13 +15,14 @@
     "check": "pnpm check-types",
     "check-types": "pnpm wasm:build && pnpm --filter @sdr-lab/web check-types",
     "lint": "prettier --write . && eslint . --fix && cargo fmt --all",
-    "lint:check": "prettier --check . && eslint . --max-warnings=0 && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
-    "test": "node --experimental-strip-types --test apps/web/tests/*.test.mjs && cargo test --workspace",
+    "lint:check": "prettier --check . && eslint . --max-warnings=0 && cargo fmt --all -- --check && cargo clippy --locked --workspace --all-targets -- -D warnings",
+    "test": "node --experimental-strip-types --test apps/web/tests/*.test.mjs scripts/promote-image.test.mjs && cargo test --locked --workspace",
+    "test:production": "node --test scripts/production-smoke.test.mjs",
     "test:stream": "node --test apps/web/tests/stream-transport.integration.mjs",
     "test:receiver": "node --test apps/web/tests/receiver.integration.mjs",
-    "test:recordings": "cargo build -p sdr-server && node --test apps/web/tests/recordings.integration.mjs",
+    "test:recordings": "cargo build --locked -p sdr-server && node --test apps/web/tests/recordings.integration.mjs",
     "quality:check": "pnpm check-types && pnpm lint:check && pnpm test",
-    "build": "pnpm wasm:build && pnpm --filter @sdr-lab/web build && cargo build -p sdr-server --release"
+    "build": "pnpm wasm:build && pnpm --filter @sdr-lab/web build && cargo build --locked -p sdr-server --release"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
@@ -35,6 +36,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "globals": "16.5.0",
     "prettier": "3.9.6",
-    "wasm-pack": "0.15.0"
+    "wasm-pack": "0.15.0",
+    "yaml": "2.8.1"
   }
 }

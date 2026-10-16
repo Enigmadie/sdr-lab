@@ -6,7 +6,7 @@ PM := pnpm --dir "$(ROOT_DIR)"
 .PHONY: help install setup build start dev lint lint-check test quality-check \
         check-types dev-client build-client start-client check-types-client \
         start-server build-server lint-server test-server wasm-build clean \
-        b s i l t
+        image-build test-recordings test-production b s i l t
 
 help:
 	@echo "install       Install JavaScript tooling and dependencies"
@@ -16,8 +16,11 @@ help:
 	@echo "lint          Format code and apply ESLint fixes"
 	@echo "lint-check    Check formatting, ESLint and Rust Clippy"
 	@echo "check-types   Build WASM bindings and check TypeScript"
-	@echo "test          Run Rust workspace tests"
+	@echo "test          Run JavaScript and Rust unit tests"
 	@echo "quality-check Run types, lint checks and tests"
+	@echo "image-build   Build the production container for the local architecture"
+	@echo "test-recordings Run hardware-independent capture/replay integration tests"
+	@echo "test-production Smoke-test a running synthetic production server (SDR_SMOKE_URL)"
 
 install:
 	$(PM) install
@@ -36,6 +39,12 @@ test:
 	$(PM) test
 quality-check:
 	$(PM) quality:check
+image-build:
+	docker build -t sdr-lab:local "$(ROOT_DIR)"
+test-recordings:
+	$(PM) test:recordings
+test-production:
+	$(PM) test:production
 check-types:
 	$(PM) check-types
 

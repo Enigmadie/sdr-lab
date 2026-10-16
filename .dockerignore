@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+target
+crates/dsp-wasm/pkg
+.git
+.github
+.env*
+**/.env*
+AGENTS.md
+TODO.md
+recordings
+**/*.iqrec
+**/*.iq
+**/*.cs8
+**/*.cs16
+**/*.cf32

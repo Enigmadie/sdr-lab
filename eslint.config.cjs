@@ -20,7 +20,7 @@ module.exports = [
   },
   js.configs.recommended,
   {
-    files: ['**/*.cjs', 'apps/web/tests/**/*.mjs'],
+    files: ['**/*.cjs', 'apps/web/tests/**/*.mjs', 'scripts/**/*.mjs'],
     languageOptions: { globals: globals.node },
     plugins: { prettier: prettierPlugin },
     rules: { 'prettier/prettier': 'error' },
